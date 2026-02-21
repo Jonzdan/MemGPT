@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MemGPT — Memory Operations Log</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">⬡</div>
+        <div>
+          <div class="brand-name">MEMGPT</div>
+          <div class="brand-sub">Memory Operations Log</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview" onclick="switchView('overview', this)">
+          <span class="nav-icon">◈</span> Overview
+        </button>
+        <button class="nav-item" data-view="sessions" onclick="switchView('sessions', this)">
+          <span class="nav-icon">◫</span> Sessions
+        </button>
+        <button class="nav-item" data-view="timeline" onclick="switchView('timeline', this)">
+          <span class="nav-icon">◱</span> Timeline
+        </button>
+        <button class="nav-item" data-view="writes" onclick="switchView('writes', this)">
+          <span class="nav-icon">◲</span> Core Writes
+        </button>
+        <button class="nav-item" data-view="search" onclick="switchView('search', this)">
+          <span class="nav-icon">◳</span> Search
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-dot"></div>
+        <span id="db-status">Connected</span>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <!-- Overview -->
+      <div class="view active" id="view-overview">
+        <div class="page-header">
+          <h1>System Overview</h1>
+          <button class="btn-refresh" onclick="loadStats()">↻ Refresh</button>
+        </div>
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Operations</div>
+            <div class="stat-value" id="stat-total">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Sessions</div>
+            <div class="stat-value" id="stat-sessions">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Agents</div>
+            <div class="stat-value" id="stat-agents">—</div>
+          </div>
+          <div class="stat-card accent">
+            <div class="stat-label">Attack Operations</div>
+            <div class="stat-value" id="stat-attacks">—</div>
+          </div>
+        </div>
+
+        <div class="section-header">Operation Breakdown</div>
+        <div class="breakdown-grid">
+          <div class="breakdown-item">
+            <div class="breakdown-bar-wrap">
+              <div class="breakdown-bar core" id="bar-core"></div>
+            </div>
+            <div class="breakdown-label">Core Memory</div>
+            <div class="breakdown-count" id="count-core">—</div>
+          </div>
+          <div class="breakdown-item">
+            <div class="breakdown-bar-wrap">
+              <div class="breakdown-bar recall" id="bar-recall"></div>
+            </div>
+            <div class="breakdown-label">Recall Memory</div>
+            <div class="breakdown-count" id="count-recall">—</div>
+          </div>
+          <div class="breakdown-item">
+            <div class="breakdown-bar-wrap">
+              <div class="breakdown-bar archival" id="bar-archival"></div>
+            </div>
+            <div class="breakdown-label">Archival Memory</div>
+            <div class="breakdown-count" id="count-archival">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sessions -->
+      <div class="view" id="view-sessions">
+        <div class="page-header">
+          <h1>Sessions</h1>
+          <button class="btn-refresh" onclick="loadSessions()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table id="sessions-table">
+            <thead>
+              <tr>
+                <th>Session ID</th>
+                <th>Agent ID</th>
+                <th>Started</th>
+                <th>Last Event</th>
+                <th>Ops</th>
+                <th>Core</th>
+                <th>Recall</th>
+                <th>Archival</th>
+                <th>Attacks</th>
+                <th>Scenario</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Timeline -->
+      <div class="view" id="view-timeline">
+        <div class="page-header">
+          <h1>Timeline</h1>
+        </div>
+        <div class="query-bar">
+          <input id="timeline-session" class="input" placeholder="Session ID" />
+          <button class="btn" onclick="loadTimeline()">Load Timeline</button>
+        </div>
+        <div class="timeline-wrap" id="timeline-wrap"></div>
+      </div>
+
+      <!-- Core Writes -->
+      <div class="view" id="view-writes">
+        <div class="page-header">
+          <h1>Core Memory Writes</h1>
+        </div>
+        <div class="query-bar">
+          <input id="writes-hours" class="input" type="number" value="1" style="width:80px" />
+          <span class="query-label">hours</span>
+          <input id="writes-agent" class="input" placeholder="Agent ID (optional)" />
+          <button class="btn" onclick="loadWrites()">Query</button>
+        </div>
+        <div class="table-wrap">
+          <table id="writes-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Timestamp</th>
+                <th>Operation</th>
+                <th>Field</th>
+                <th>Content</th>
+                <th>Prev Value</th>
+                <th>Token %</th>
+                <th>Diff</th>
+              </tr>
+            </thead>
+            <tbody id="writes-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="view" id="view-search">
+        <div class="page-header">
+          <h1>Search Logs</h1>
+        </div>
+        <div class="query-bar">
+          <input id="search-q" class="input" placeholder="Search content..." style="flex:1" />
+          <input id="search-session" class="input" placeholder="Session ID (optional)" />
+          <button class="btn" onclick="doSearch()">Search</button>
+        </div>
+        <div class="table-wrap">
+          <table id="search-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Timestamp</th>
+                <th>Operation</th>
+                <th>Session</th>
+                <th>Content</th>
+                <th>Token %</th>
+              </tr>
+            </thead>
+            <tbody id="search-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Diff Modal -->
+  <div class="modal-overlay" id="modal-overlay" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">Memory Diff</div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Label Modal -->
+  <div class="modal-overlay" id="label-overlay" onclick="closeLabelModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">Label Session</div>
+        <button class="modal-close" onclick="closeLabelModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <input id="label-session-id" type="hidden" />
+        <div class="field-group">
+          <label class="field-label">Attack Scenario</label>
+          <select id="label-scenario" class="input">
+            <option value="">— None —</option>
+            <option value="memory_poisoning">Memory Poisoning</option>
+            <option value="exfiltration">Exfiltration</option>
+            <option value="constraint_bypass">Constraint Bypass</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Ground Truth Label</label>
+          <select id="label-gt" class="input">
+            <option value="0">0 — Benign</option>
+            <option value="1">1 — Attack</option>
+          </select>
+        </div>
+        <button class="btn" style="margin-top:16px" onclick="submitLabel()">Save Label</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

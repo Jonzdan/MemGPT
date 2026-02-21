@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import List
 
 from memgpt.data_types import AgentState, Message
-from memgpt.memory import BaseRecallMemory, EmbeddingArchivalMemory
+# from memgpt.memory import BaseRecallMemory, EmbeddingArchivalMemory
+from memgpt.memory_logs import LoggedRecallMemory, LoggedArchivalMemory
 from memgpt.utils import printd
 
 
@@ -40,16 +41,16 @@ class PersistenceManager(ABC):
 class LocalStateManager(PersistenceManager):
     """In-memory state manager has nothing to manage, all agents are held in-memory"""
 
-    recall_memory_cls = BaseRecallMemory
-    archival_memory_cls = EmbeddingArchivalMemory
+    recall_memory_cls = LoggedRecallMemory
+    archival_memory_cls = LoggedArchivalMemory
 
     def __init__(self, agent_state: AgentState):
         # Memory held in-state useful for debugging stateful versions
         self.memory = None
         # self.messages = []  # current in-context messages
         # self.all_messages = [] # all messages seen in current session (needed if lazily synchronizing state with DB)
-        self.archival_memory = EmbeddingArchivalMemory(agent_state)
-        self.recall_memory = BaseRecallMemory(agent_state)
+        self.archival_memory = LoggedArchivalMemory(agent_state)
+        self.recall_memory = LoggedRecallMemory(agent_state)
         # self.agent_state = agent_state
 
     def save(self):

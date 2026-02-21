@@ -10,6 +10,7 @@ from sqlalchemy import (
     BINARY,
     CHAR,
     JSON,
+    Boolean,
     Column,
     DateTime,
     String,
@@ -230,6 +231,10 @@ def get_db_model(
             # Add a datetime column, with default value as the current time
             created_at = Column(DateTime(timezone=True))
 
+            token_offset = Column(BIGINT, nullable=True)      # tokens into context window when message was created
+            is_injection = Column(Boolean, nullable=True)      # flag for known injection attempts
+            injection_type = Column(String, nullable=True)     # "immediate", "midpoint", "overflow"
+
             def __repr__(self):
                 return f"<Message(message_id='{self.id}', text='{self.text}', embedding='{self.embedding})>"
 
@@ -248,6 +253,9 @@ def get_db_model(
                     embedding_model=self.embedding_model,
                     created_at=self.created_at,
                     id=self.id,
+                    token_offset=self.token_offset,
+                    is_injection=self.is_injection,
+                    injection_type=self.injection_type
                 )
 
         """Create database model for table_name"""

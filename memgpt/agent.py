@@ -34,6 +34,7 @@ from memgpt.llm_api.llm_api_tools import create, is_context_overflow_error
 from memgpt.memory import ArchivalMemory
 from memgpt.memory import CoreMemory as InContextMemory
 from memgpt.memory import RecallMemory, summarize_messages
+from memgpt.memory_logs import LoggedCoreMemory, LoggedRecallMemory, LoggedArchivalMemory
 from memgpt.metadata import MetadataStore
 from memgpt.models import chat_completion_response
 from memgpt.persistence_manager import LocalStateManager
@@ -116,7 +117,8 @@ def initialize_memory(ai_notes: Union[str, None], human_notes: Union[str, None])
         raise ValueError(ai_notes)
     if human_notes is None:
         raise ValueError(human_notes)
-    memory = InContextMemory(human_char_limit=CORE_MEMORY_HUMAN_CHAR_LIMIT, persona_char_limit=CORE_MEMORY_PERSONA_CHAR_LIMIT)
+    # memory = InContextMemory(human_char_limit=CORE_MEMORY_HUMAN_CHAR_LIMIT, persona_char_limit=CORE_MEMORY_PERSONA_CHAR_LIMIT)
+    memory = LoggedCoreMemory(human_char_limit=CORE_MEMORY_HUMAN_CHAR_LIMIT, persona_char_limit=CORE_MEMORY_PERSONA_CHAR_LIMIT)
     memory.edit_persona(ai_notes)
     memory.edit_human(human_notes)
     return memory
@@ -124,10 +126,10 @@ def initialize_memory(ai_notes: Union[str, None], human_notes: Union[str, None])
 
 def construct_system_with_memory(
     system: str,
-    memory: InContextMemory,
+    memory: LoggedCoreMemory,
     memory_edit_timestamp: str,
-    archival_memory: Optional[ArchivalMemory] = None,
-    recall_memory: Optional[RecallMemory] = None,
+    archival_memory: Optional[LoggedArchivalMemory] = None,
+    recall_memory: Optional[LoggedRecallMemory] = None,
     include_char_count: bool = True,
 ):
     full_system_message = "\n".join(
@@ -152,9 +154,9 @@ def construct_system_with_memory(
 def initialize_message_sequence(
     model: str,
     system: str,
-    memory: InContextMemory,
-    archival_memory: Optional[ArchivalMemory] = None,
-    recall_memory: Optional[RecallMemory] = None,
+    memory: LoggedCoreMemory,
+    archival_memory: Optional[LoggedArchivalMemory] = None,
+    recall_memory: Optional[LoggedRecallMemory] = None,
     memory_edit_timestamp: Optional[str] = None,
     include_initial_boot_message: bool = True,
 ) -> List[dict]:
@@ -267,6 +269,8 @@ class Agent(object):
         if "human" not in self.agent_state.state:
             raise ValueError(f"'human' not found in provided AgentState")
         self.memory = initialize_memory(ai_notes=self.agent_state.state["persona"], human_notes=self.agent_state.state["human"])
+        print(f"[DEBUG] self.memory type = {type(self.memory)}")  # add this
+
 
         # Interface must implement:
         # - internal_monologue
@@ -778,6 +782,11 @@ class Agent(object):
             # Check the memory pressure and potentially issue a memory pressure warning
             current_total_tokens = response.usage.total_tokens
             active_memory_warning = False
+
+            # Update memory logs with token context
+            from memgpt.memory_logs import update_token_context
+            context_window = self.agent_state.llm_config.context_window
+            update_token_context(current_total_tokens, context_window)
             # We can't do summarize logic properly if context_window is undefined
             if self.agent_state.llm_config.context_window is None:
                 # Fallback if for some reason context_window is missing, just set to the default

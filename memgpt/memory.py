@@ -311,6 +311,7 @@ class BaseRecallMemory(RecallMemory):
 
         self.agent_state = agent_state
 
+
         # create embedding model
         self.embed_model = embedding_model(agent_state.embedding_config)
         self.embedding_chunk_size = agent_state.embedding_config.embedding_chunk_size
