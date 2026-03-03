@@ -27,6 +27,33 @@ def _get_db_path():
 
 def _init_db():
     conn = sqlite3.connect(_get_db_path())
+    # conn.execute("""
+    #     CREATE TABLE IF NOT EXISTS memory_logs (
+    #         id INTEGER PRIMARY KEY AUTOINCREMENT,
+    #         timestamp TEXT NOT NULL,
+    #         operation TEXT NOT NULL,
+    #         content TEXT NOT NULL,
+    #         user_id TEXT,
+    #         agent_id TEXT,
+    #         token_offset INTEGER,
+    #         context_window_pct REAL,
+    #         model TEXT,
+    #         sequence_num INTEGER NOT NULL,
+    #         context_window INTEGER,
+    #         session_id TEXT,
+    #         attack_scenario TEXT,
+    #         ground_truth_label INTEGER,
+    #         previous_value TEXT
+    #     )
+                 
+    #     CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id);
+    #     CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id);
+    #     CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation);
+    #     CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
+    # """)
+    conn = sqlite3.connect(_get_db_path())
+
+    # Create table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS memory_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,12 +72,14 @@ def _init_db():
             ground_truth_label INTEGER,
             previous_value TEXT
         )
-                 
-        CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id);
-        CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id);
-        CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation);
-        CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
     """)
+
+    # Create indexes
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp)")
+
     conn.commit()
     conn.close()
 
