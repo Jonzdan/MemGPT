@@ -23,7 +23,6 @@ def _get_db_path():
     from memgpt.config import MemGPTConfig
     config = MemGPTConfig.load()
     DB_PATH = os.path.join(config.recall_storage_path, "sqlite.db")
-    print(DB_PATH)
     return DB_PATH
 
 def _init_db():
