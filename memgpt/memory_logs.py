@@ -51,7 +51,6 @@ def _init_db():
     #     CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation);
     #     CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
     # """)
-    conn = sqlite3.connect(_get_db_path())
 
     # Create table
     conn.execute("""
