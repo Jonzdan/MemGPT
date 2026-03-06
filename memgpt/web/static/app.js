@@ -179,6 +179,7 @@ async function loadWrites() {
       <td>${r.sequence_num}</td>
       <td>${fmt(r.timestamp)}</td>
       <td>${opBadge(r.operation)}</td>
+      <td title="${r.agent_id}">${shortId(r.agent_id || 'N/A')}</td> <td>${field}</td>
       <td>${field}</td>
       <td title="${content}">${truncate(content)}</td>
       <td title="${r.previous_value || ''}">${truncate(r.previous_value)}</td>
