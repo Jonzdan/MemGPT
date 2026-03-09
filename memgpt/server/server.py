@@ -1194,14 +1194,15 @@ class SyncServer(LockingServer):
             new_persona = new_memory_contents["persona"]
             if old_core_memory["persona"] != new_persona:
                 new_core_memory["persona"] = new_persona
-                memgpt_agent.memory.edit_persona(new_persona)
+                memgpt_agent.memory.edit_persona(new_persona, memgpt_agent.agent_state.id)
                 modified = True
 
         if "human" in new_memory_contents and new_memory_contents["human"] is not None:
             new_human = new_memory_contents["human"]
             if old_core_memory["human"] != new_human:
                 new_core_memory["human"] = new_human
-                memgpt_agent.memory.edit_human(new_human)
+                # include agent id so the logger can record which agent was changed
+                memgpt_agent.memory.edit_human(new_human, memgpt_agent.agent_state.id)
                 modified = True
 
         # If we modified the memory contents, we need to rebuild the memory block inside the system message
@@ -1212,6 +1213,7 @@ class SyncServer(LockingServer):
             "old_core_memory": old_core_memory,
             "new_core_memory": new_core_memory,
             "modified": modified,
+            "agent_id": agent_id,
         }
 
     def rename_agent(self, user_id: uuid.UUID, agent_id: uuid.UUID, new_agent_name: str) -> AgentState:
