@@ -1,86 +1,49 @@
 [tool.poetry]
 name = "pymemgpt"
 version = "0.3.16"
-packages = [
-    {include = "memgpt"}
-]
-description = "Create LLM agents with long-term memory and custom tools"
-authors = [
-    "MemGPT Team <hi@memgpt.ai>",
-]
-license = "Apache License"
+description = "Teaching LLMs memory management for unbounded context"
+authors = ["MemGPT Team <team@memgpt.ai>"]
+license = "Apache-2.0"
 readme = "README.md"
-
-[tool.poetry.scripts]
-memgpt = "memgpt.main:app"
+packages = [{include = "memgpt"}]
 
 [tool.poetry.dependencies]
-python = "<3.13,>=3.10"
-# typer = {extras = ["all"], version = "^0.9.0"}
-typer = "0.9.0"
-click = "8.1.3"
-questionary = "^2.0.1"
-pytz = "^2023.3.post1"
-tqdm = "^4.66.1"
-black = {extras = ["jupyter"], version = "^24.2.0"}
-setuptools = "^68.2.2"
-datasets = { version = "^2.14.6", optional = true}
-prettytable = "^3.9.0"
-pgvector = { version = "^0.2.3", optional = true }
-pre-commit = {version = "^3.5.0", optional = true }
-pg8000 = {version = "^1.30.3", optional = true}
-websockets = {version = "^12.0", optional = true}
-docstring-parser = "^0.15"
-# lancedb = "^0.3.3"
-# lancedb = "0.3.1"
-httpx = "^0.25.2"
+python = "<3.12,>=3.10"
+# Core dependencies pinned to fix the version solving loop
+pydantic = "1.10.15"
+sqlalchemy = { version = "1.4.41", extras = ["asyncio"] }
+sqlmodel = "0.0.8"
+# Standard dependencies
+typer = {extras = ["all"], version = "^0.9.0"}
+requests = "^2.31.0"
 numpy = "^1.26.2"
-demjson3 = "^3.0.6"
+tqdm = "^4.66.1"
+pytz = "^2023.3.post1"
+python-dotenv = "^1.0.0"
+openai = "^1.14.3"
 tiktoken = "^0.5.1"
+questionary = "^2.0.1"
+prettytable = "^3.9.0"
+demjson3 = "^3.0.6"
 pyyaml = "^6.0.1"
-chromadb = "^0.4.18"
-sqlalchemy-json = "^0.7.0"
-fastapi = {version = "^0.104.1", optional = true}
-uvicorn = {version = "^0.24.0.post1", optional = true}
-pydantic = "^2.5.2"
-pyautogen = {version = "0.2.22", optional = true}
-html2text = "^2020.1.16"
-docx2txt = "^0.8"
-sqlalchemy = "^2.0.25"
-pexpect = {version = "^4.9.0", optional = true}
-pyright = {version = "^1.1.347", optional = true}
-pymilvus = {version ="^2.4.3", optional = true}
-python-box = "^7.1.1"
-sqlmodel = "^0.0.16"
-autoflake = {version = "^2.3.0", optional = true}
-llama-index = "^0.10.27"
-llama-index-embeddings-openai = "^0.1.1"
-llama-index-embeddings-huggingface = {version = "^0.2.0", optional = true}
-llama-index-embeddings-azure-openai = "^0.1.6"
-python-multipart = "^0.0.9"
-sqlalchemy-utils = "^0.41.2"
-pytest-order = {version = "^1.2.0", optional = true}
-pytest-asyncio = {version = "^0.23.2", optional = true}
-pytest = { version = "^7.4.4", optional = true }
-pydantic-settings = "^2.2.1"
-httpx-sse = "^0.4.0"
-isort = { version = "^5.13.2", optional = true }
-finnhub-python = {version ="^2.4.19", optional = true}
-psycopg2-binary = {version ="^2.9.9", optional = true}
+pycryptodome = "^3.19.0"
+fastapi = "^0.104.1"
+uvicorn = "^0.24.0.post1"
+websockets = "^12.0"
+httpx = "^0.25.2"
+pip = "^23.3.1"
+setuptools = "^68.2.2"
 
-[tool.poetry.extras]
-local = ["llama-index-embeddings-huggingface"]
-postgres = ["pgvector", "pg8000", "psycopg2-binary"]
-milvus = ["pymilvus"]
-dev = ["pytest", "pytest-asyncio", "pexpect", "black", "pre-commit", "datasets", "pyright", "pytest-order", "autoflake", "isort"]
-server = ["websockets", "fastapi", "uvicorn"]
-autogen = ["pyautogen"]
-ltm-prototype = ["finnhub-python"]
-
-[tool.black]
-line-length = 140
-target-version = ['py310', 'py311']
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+black = "^23.11.0"
+isort = "^5.12.0"
+autoflake = "^2.2.1"
+pre-commit = "^3.5.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+memgpt = "memgpt.main:app"

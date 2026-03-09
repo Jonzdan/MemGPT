@@ -51,6 +51,13 @@ def _init_db():
         CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation);
         CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
     """)
+
+    # Create indexes
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp)")
+
     conn.commit()
     conn.close()
 
