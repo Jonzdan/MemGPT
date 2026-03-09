@@ -112,15 +112,25 @@ def link_functions(function_schemas: list):
     return linked_function_set
 
 
-def initialize_memory(ai_notes: Union[str, None], human_notes: Union[str, None]):
+def initialize_memory(
+    ai_notes: Union[str, None],
+    human_notes: Union[str, None],
+    agent_id: Optional[uuid.UUID] = None,
+):
+    
     if ai_notes is None:
         raise ValueError(ai_notes)
     if human_notes is None:
         raise ValueError(human_notes)
     # memory = InContextMemory(human_char_limit=CORE_MEMORY_HUMAN_CHAR_LIMIT, persona_char_limit=CORE_MEMORY_PERSONA_CHAR_LIMIT)
     memory = LoggedCoreMemory(human_char_limit=CORE_MEMORY_HUMAN_CHAR_LIMIT, persona_char_limit=CORE_MEMORY_PERSONA_CHAR_LIMIT)
+    memory.set_agent_id(str(agent_id))  # set the agent ID for logging purposes
     memory.edit_persona(ai_notes)
+    # forward the agent id so that logging knows which agent is being modified
     memory.edit_human(human_notes)
+
+    if agent_id is not None:
+        print("AGENT ID", agent_id)
     return memory
 
 
@@ -268,7 +278,11 @@ class Agent(object):
             raise ValueError(f"'persona' not found in provided AgentState")
         if "human" not in self.agent_state.state:
             raise ValueError(f"'human' not found in provided AgentState")
-        self.memory = initialize_memory(ai_notes=self.agent_state.state["persona"], human_notes=self.agent_state.state["human"])
+        self.memory = initialize_memory(
+            ai_notes=self.agent_state.state["persona"],
+            human_notes=self.agent_state.state["human"],
+            agent_id=self.agent_state.id,
+        )
         print(f"[DEBUG] self.memory type = {type(self.memory)}")  # add this
 
 

@@ -50,7 +50,8 @@ class CoreMemory(object):
     def load(cls, state):
         return cls(state["persona"], state["human"])
 
-    def edit_persona(self, new_persona):
+    def edit_persona(self, new_persona, agent_id=None):
+        # agent_id is unused by the base class but subclasses may log it
         if self.persona_char_limit and len(new_persona) > self.persona_char_limit:
             error_msg = f"Edit failed: Exceeds {self.persona_char_limit} character limit (requested {len(new_persona)})."
             if self.archival_memory_exists:
@@ -60,7 +61,8 @@ class CoreMemory(object):
         self.persona = new_persona
         return len(self.persona)
 
-    def edit_human(self, new_human):
+    def edit_human(self, new_human, agent_id=None):
+        # agent_id is unused by the base class, but subclasses may log it
         if self.human_char_limit and len(new_human) > self.human_char_limit:
             error_msg = f"Edit failed: Exceeds {self.human_char_limit} character limit (requested {len(new_human)})."
             if self.archival_memory_exists:
@@ -70,38 +72,38 @@ class CoreMemory(object):
         self.human = new_human
         return len(self.human)
 
-    def edit(self, field, content):
+    def edit(self, field, content, agent_id=None):
         if field == "persona":
-            return self.edit_persona(content)
+            return self.edit_persona(content, agent_id)
         elif field == "human":
-            return self.edit_human(content)
+            return self.edit_human(content, agent_id)
         else:
             raise KeyError(f'No memory section named {field} (must be either "persona" or "human")')
 
-    def edit_append(self, field, content, sep="\n"):
+    def edit_append(self, field, content, sep="\n", agent_id=None):
         if field == "persona":
             new_content = self.persona + sep + content
-            return self.edit_persona(new_content)
+            return self.edit_persona(new_content, agent_id)
         elif field == "human":
             new_content = self.human + sep + content
-            return self.edit_human(new_content)
+            return self.edit_human(new_content, agent_id)
         else:
             raise KeyError(f'No memory section named {field} (must be either "persona" or "human")')
 
-    def edit_replace(self, field, old_content, new_content):
+    def edit_replace(self, field, old_content, new_content, agent_id=None):
         if len(old_content) == 0:
             raise ValueError("old_content cannot be an empty string (must specify old_content to replace)")
 
         if field == "persona":
             if old_content in self.persona:
                 new_persona = self.persona.replace(old_content, new_content)
-                return self.edit_persona(new_persona)
+                return self.edit_persona(new_persona, agent_id)
             else:
                 raise ValueError("Content not found in persona (make sure to use exact string)")
         elif field == "human":
             if old_content in self.human:
                 new_human = self.human.replace(old_content, new_content)
-                return self.edit_human(new_human)
+                return self.edit_human(new_human, agent_id)
             else:
                 raise ValueError("Content not found in human (make sure to use exact string)")
         else:

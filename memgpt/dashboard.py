@@ -40,11 +40,19 @@ def get_db_path():
     return DB_PATH
 
 def query_logs(sql, params=()):
-    conn = sqlite3.connect(get_db_path())
-    conn.row_factory = sqlite3.Row
-    results = conn.execute(sql, params).fetchall()
-    conn.close()
-    return [dict(r) for r in results]
+    db_path = get_db_path()
+    if not os.path.exists(db_path):
+        return [] # Return empty list instead of crashing if DB isn't there yet
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        results = conn.execute(sql, params).fetchall()
+        conn.close()
+        return [dict(r) for r in results]
+    except sqlite3.OperationalError as e:
+        print(f"Database error: {e}")
+        return [] # Returns empty if table 'memory_logs' hasn't been created yet
 
 
 @app.get("/")
@@ -149,9 +157,12 @@ def stats():
 def search(q: str = Query(...), session_id: str = None):
     base = "SELECT * FROM memory_logs WHERE content LIKE ?"
     params = [f"%{q}%"]
-    if session_id:
-        base += " AND session_id = ?"
-        params.append(session_id)
+    # if session_id:
+    #     base += " AND session_id = ?"
+    #     params.append(session_id)
+    if agent_id:
+        base += " AND agent_id = ?"
+        params.append(agent_id)
     base += " ORDER BY sequence_num ASC LIMIT 100"
     return query_logs(base, params)
 

@@ -27,33 +27,7 @@ def _get_db_path():
 
 def _init_db():
     conn = sqlite3.connect(_get_db_path())
-    # conn.execute("""
-    #     CREATE TABLE IF NOT EXISTS memory_logs (
-    #         id INTEGER PRIMARY KEY AUTOINCREMENT,
-    #         timestamp TEXT NOT NULL,
-    #         operation TEXT NOT NULL,
-    #         content TEXT NOT NULL,
-    #         user_id TEXT,
-    #         agent_id TEXT,
-    #         token_offset INTEGER,
-    #         context_window_pct REAL,
-    #         model TEXT,
-    #         sequence_num INTEGER NOT NULL,
-    #         context_window INTEGER,
-    #         session_id TEXT,
-    #         attack_scenario TEXT,
-    #         ground_truth_label INTEGER,
-    #         previous_value TEXT
-    #     )
-                 
-    #     CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id);
-    #     CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id);
-    #     CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation);
-    #     CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
-    # """)
-
-    # Create table
-    conn.execute("""
+    conn.executescript("""
         CREATE TABLE IF NOT EXISTS memory_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
@@ -70,7 +44,12 @@ def _init_db():
             attack_scenario TEXT,
             ground_truth_label INTEGER,
             previous_value TEXT
-        )
+        );
+                 
+        CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id);
+        CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation);
+        CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
     """)
 
     # Create indexes
@@ -91,9 +70,12 @@ def _ensure_db():
         _init_db()
         _db_initialized = True
 
-def _log(operation, content, session_id=None, previous_value=None, user_id=None, agent_id=None, model=None, context_window=None):
+def _log(operation, content, session_id=None, previous_value=None, agent_id=None, user_id=None, model=None, context_window=None):
+    # print(f"Logging operation: {operation}, content: {content}, session_id: {session_id}, previous_value: {previous_value}, agent_id: {agent_id}, user_id: {user_id}, model: {model}, context_window: {context_window}")
     _ensure_db()
     conn = sqlite3.connect(_get_db_path())
+    if CURRENT_AGENT_ID:
+        agent_id = CURRENT_AGENT_ID
     # conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(
         """INSERT INTO memory_logs 
@@ -125,6 +107,8 @@ def set_session(session_id: str):
     global CURRENT_SESSION_ID
     CURRENT_SESSION_ID = session_id
 
+
+
 def update_token_context(total_tokens: int, context_window: int):
     global CURRENT_TOKEN_OFFSET, CURRENT_CONTEXT_WINDOW_PCT
     CURRENT_TOKEN_OFFSET = total_tokens
@@ -132,20 +116,50 @@ def update_token_context(total_tokens: int, context_window: int):
 
 
 class LoggedCoreMemory(CoreMemory):
+
+    def set_agent_id(self, agent_id):
+        # print(f"Setting CURRENT_AGENT_ID to {agent_id} for logging purposes")
+        # This is a fallback in case agent_id is not passed in directly to the logging calls. Prefer explicit agent_id when available.
+        global CURRENT_AGENT_ID
+        CURRENT_AGENT_ID = agent_id
+
+    # print("LoggedCoreMemory class defined")  # Debug print to confirm class definition
+    # print(CoreMemory.__dict__)  # Debug print to see all attributes of CoreMemory
+    # print("\n\n\n")
+    
+    # def _get_safe_id(self):
+    #     # This checks three different places where the ID might be hiding
+    #     print("SELF\n\n")
+    #     print(self.__dict__)  # Debug print to see all attributes
+    #     print("\n\n\n")
+    #     try:
+    #         return getattr(self, "id", None) or \
+    #                getattr(self.agent_id, "id", None) or \
+    #                getattr(self.agent, "id", None) or \
+    #                getattr(self.agent_state, "id", None) or \
+    #                "INITIALIZING" # If all else fails, mark it as initializing
+    #     except:
+    #         return "UNKNOWN"
+            
     def edit_persona(self, new_persona):
         print(f"[LoggedCoreMemory] edit_persona called")
         _log("core_memory_write_persona", {"field": "persona", "new_value": new_persona},
              session_id=CURRENT_SESSION_ID, previous_value=self.persona)
+        # base class ignores agent_id, but include for signature consistency
         return super().edit_persona(new_persona)
 
-    def edit_human(self, new_human):
+    def edit_human(self, new_human, agent_id=None):
         print(f"[LoggedCoreMemory] edit_human called")
+        # prefer explicit agent_id over whatever the safe fetcher returns
+        # aid = agent_id or self._get_safe_id()
         _log("core_memory_write_human", {"field": "human", "new_value": new_human},
              session_id=CURRENT_SESSION_ID, previous_value=self.human)
+        # base class ignores agent_id, but keep signature for consistency
         return super().edit_human(new_human)
 
     def edit_append(self, field, content, sep="\n"):
         print(f"[LoggedCoreMemory] edit_append called")
+        # aid = self._get_safe_id() # Use the safe ID fetcher
         prev = self.persona if field == "persona" else self.human
         _log("core_memory_append", {"field": field, "content": content},
              session_id=CURRENT_SESSION_ID, previous_value=prev)
@@ -153,6 +167,7 @@ class LoggedCoreMemory(CoreMemory):
 
     def edit_replace(self, field, old_content, new_content):
         print(f"[LoggedCoreMemory] edit_replace called")
+        # aid = self._get_safe_id() # Use the safe ID fetcher
         prev = self.persona if field == "persona" else self.human
         _log("core_memory_replace", {"field": field, "old": old_content, "new": new_content},
              session_id=CURRENT_SESSION_ID, previous_value=prev)
@@ -160,6 +175,10 @@ class LoggedCoreMemory(CoreMemory):
 
 
 class LoggedRecallMemory(BaseRecallMemory):
+    # print("LoggedRecallMemory class defined")  # Debug print to confirm class definition
+    # print(BaseRecallMemory.__dict__)  # Debug print to see all attributes of BaseRecallMemory
+    # print("\n\n\n")
+
     def text_search(self, query_string, count=None, start=None):
         results, total = super().text_search(query_string, count, start)
         _log("recall_text_search", {"query": query_string, "total_results": total},
@@ -181,6 +200,7 @@ class LoggedRecallMemory(BaseRecallMemory):
         return results, total
 
     def insert(self, message: Message):
+        # print(f"[LoggedRecallMemory] insert called with message: {message._dict__}")  # Debug print to see message content
         _log("recall_insert", {"role": message.role, "text": message.text},
              session_id=CURRENT_SESSION_ID,
              user_id=self.agent_state.user_id,
@@ -201,6 +221,10 @@ class LoggedRecallMemory(BaseRecallMemory):
 
 
 class LoggedArchivalMemory(EmbeddingArchivalMemory):
+    # print("LoggedArchivalMemory class defined")  # Debug print to confirm class definition
+    # print(EmbeddingArchivalMemory.__dict__)  # Debug print to see all attributes of EmbeddingArchivalMemory
+    # print("\n\n\n")
+    
     def insert(self, memory_string, return_ids=False):
         _log("archival_insert", {"content": memory_string},
              session_id=CURRENT_SESSION_ID,
