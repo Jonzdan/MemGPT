@@ -81,13 +81,13 @@ def sessions():
     """)
 
 
-@app.get("/api/timeline/{session_id}")
-def timeline(session_id: str):
+@app.get("/api/timeline/{agent_id}")
+def timeline(agent_id: str):
     return query_logs("""
         SELECT * FROM memory_logs
-        WHERE session_id = ?
+        WHERE agent_id = ?
         ORDER BY sequence_num ASC
-    """, (session_id,))
+    """, (agent_id,))
 
 
 @app.get("/api/before/{sequence_num}")
@@ -154,7 +154,7 @@ def stats():
 
 
 @app.get("/api/search")
-def search(q: str = Query(...), session_id: str = None):
+def search(q: str = Query(...), agent_id: str = None):
     base = "SELECT * FROM memory_logs WHERE content LIKE ?"
     params = [f"%{q}%"]
     # if session_id:

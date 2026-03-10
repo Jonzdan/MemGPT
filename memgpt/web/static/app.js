@@ -52,6 +52,26 @@ async function api(path) {
   return r.json();
 }
 
+// ── Copy helper ──────────────────────────────────────────────────
+function copyId(id, btn) {
+  navigator.clipboard.writeText(id).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1200);
+  });
+}
+
+// ── Expand row toggle ────────────────────────────────────────────
+function toggleExpand(rowId) {
+  const expanded = document.getElementById(rowId + '-exp');
+  const btn = document.querySelector('#' + rowId + ' .btn-expand');
+  if (!expanded) return;
+  const isOpen = expanded.style.display !== 'none';
+  expanded.style.display = isOpen ? 'none' : 'table-row';
+  if (btn) btn.classList.toggle('expanded', !isOpen);
+}
+
 // ── Stats / Overview ────────────────────────────────────────────
 async function loadStats() {
   try {
@@ -98,27 +118,27 @@ async function loadSessions() {
       <td style="color:var(--attack)">${s.attack_ops || 0}</td>
       <td>${s.attack_scenario || '—'}</td>
       <td style="display:flex;gap:6px">
-        <button class="btn-sm" onclick="viewTimeline('${s.session_id}')">Timeline</button>
+        <button class="btn-sm" onclick="viewTimeline('${s.agent_id}')">Timeline</button>
         <button class="btn-sm" onclick="openLabel('${s.session_id}')">Label</button>
       </td>
     </tr>
   `).join('');
 }
 
-function viewTimeline(sessionId) {
-  document.getElementById('timeline-session').value = sessionId;
+function viewTimeline(agentId) {
+  document.getElementById('timeline-agent').value = agentId;
   switchView('timeline', document.querySelector('[data-view="timeline"]'));
   loadTimeline();
 }
 
 // ── Timeline ────────────────────────────────────────────────────
 async function loadTimeline() {
-  const sid = document.getElementById('timeline-session').value.trim();
-  if (!sid) return;
-  const entries = await api(`/api/timeline/${encodeURIComponent(sid)}`);
+  const aid = document.getElementById('timeline-agent').value.trim();
+  if (!aid) return;
+  const entries = await api(`/api/timeline/${encodeURIComponent(aid)}`);
   const wrap = document.getElementById('timeline-wrap');
   if (!entries.length) {
-    wrap.innerHTML = '<div class="empty-state">No entries for this session.</div>';
+    wrap.innerHTML = '<div class="empty-state">No entries for this agent.</div>';
     return;
   }
   wrap.innerHTML = entries.map(e => {
@@ -165,26 +185,55 @@ async function loadWrites() {
   const rows = await api(url);
   const tbody = document.getElementById('writes-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No writes found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No writes found.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r => {
+  tbody.innerHTML = rows.map((r, i) => {
     let content = '—', field = '—';
     try {
       const p = JSON.parse(r.content);
       content = p.content || p.new_value || JSON.stringify(p);
       field = p.field || '—';
     } catch {}
-    return `<tr>
+    const agentId = r.agent_id || '';
+    const rowId = `wr-${r.id ?? i}`;
+    const safeContent = content.replace(/`/g, '\\`');
+    const safeAgent = agentId.replace(/`/g, '\\`');
+    return `
+    <tr id="${rowId}">
       <td>${r.sequence_num}</td>
       <td>${fmt(r.timestamp)}</td>
       <td>${opBadge(r.operation)}</td>
-      <td title="${r.agent_id}">${shortId(r.agent_id || 'N/A')}</td> <td>${field}</td>
+      <td class="id-cell">
+        <span class="id-short">${shortId(agentId)}</span>
+        <button class="btn-copy" onclick="copyId(\`${safeAgent}\`, this)">⎘</button>
+      </td>
       <td>${field}</td>
-      <td title="${content}">${truncate(content)}</td>
-      <td title="${r.previous_value || ''}">${truncate(r.previous_value)}</td>
+      <td class="id-cell">
+        <span class="id-short">${truncate(content)}</span>
+        <button class="btn-copy" onclick="copyId(\`${safeContent}\`, this)">⎘</button>
+      </td>
+      <td>${truncate(r.previous_value)}</td>
       ${pctCell(r.context_window_pct)}
-      <td><button class="btn-sm" onclick="showDiff(${r.id})">Diff</button></td>
+      <td class="actions-cell">
+        <button class="btn-sm" onclick="showDiff(${r.id})">Diff</button>
+        <button class="btn-sm btn-before" onclick="showBefore(${r.sequence_num}, \`${safeAgent}\`, event)">↑ Before</button>
+        <button class="btn-sm btn-expand" onclick="toggleExpand('${rowId}')">⤢</button>
+      </td>
+    </tr>
+    <tr id="${rowId}-exp" style="display:none" class="exp-row">
+      <td colspan="9">
+        <div class="exp-body">
+          <div class="exp-section">
+            <div class="exp-label">Agent ID <button class="btn-copy btn-copy-text" onclick="copyId(\`${safeAgent}\`, this)">⎘ copy</button></div>
+            <div class="exp-value">${agentId || '—'}</div>
+          </div>
+          <div class="exp-section">
+            <div class="exp-label">Content <button class="btn-copy btn-copy-text" onclick="copyId(\`${safeContent}\`, this)">⎘ copy</button></div>
+            <div class="exp-value">${content}</div>
+          </div>
+        </div>
+      </td>
     </tr>`;
   }).join('');
 }
@@ -192,24 +241,54 @@ async function loadWrites() {
 // ── Search ──────────────────────────────────────────────────────
 async function doSearch() {
   const q = document.getElementById('search-q').value.trim();
-  const sid = document.getElementById('search-session').value.trim();
+  const aid = document.getElementById('search-agent').value.trim();
   if (!q) return;
   let url = `/api/search?q=${encodeURIComponent(q)}`;
-  if (sid) url += `&session_id=${encodeURIComponent(sid)}`;
+  if (aid) url += `&agent_id=${encodeURIComponent(aid)}`;
   const rows = await api(url);
   const tbody = document.getElementById('search-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No results.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No results.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r => `<tr>
-    <td>${r.sequence_num}</td>
-    <td>${fmt(r.timestamp)}</td>
-    <td>${opBadge(r.operation)}</td>
-    <td title="${r.session_id}">${shortId(r.session_id || '')}</td>
-    <td title="${r.content}">${truncate(r.content)}</td>
-    ${pctCell(r.context_window_pct)}
-  </tr>`).join('');
+  tbody.innerHTML = rows.map((r, i) => {
+    const agentId = r.agent_id || '';
+    const content = r.content || '';
+    const rowId = `sr-${r.id ?? i}`;
+    const safeContent = content.replace(/`/g, '\\`');
+    const safeAgent = agentId.replace(/`/g, '\\`');
+    return `
+    <tr id="${rowId}">
+      <td>${r.sequence_num}</td>
+      <td>${fmt(r.timestamp)}</td>
+      <td>${opBadge(r.operation)}</td>
+      <td class="id-collapse">
+        <span class="id-short">${shortId(agentId)}</span>
+        <button class="btn-copy" onclick="copyId(\`${safeAgent}\`, this)">⎘</button>
+      </td>
+      <td class="id-collapse">
+        <span class="id-short">${truncate(content)}</span>
+        <button class="btn-copy" onclick="copyId(\`${safeContent}\`, this)">⎘</button>
+      </td>
+      ${pctCell(r.context_window_pct)}
+      <td><button class="btn-sm btn-before" onclick="showBefore(${r.sequence_num}, \`${safeAgent}\`, event)">↑ Before</button></td>
+      <td><button class="btn-sm btn-expand" onclick="toggleExpand('${rowId}')">⤢</button></td>
+    </tr>
+    <tr id="${rowId}-exp" style="display:none" class="exp-row">
+      <td colspan="8">
+        <div class="exp-body">
+          <div class="exp-section">
+            <div class="exp-label">Agent ID <button class="btn-copy btn-copy-text" onclick="copyId(\`${safeAgent}\`, this)">⎘ copy</button></div>
+            <div class="exp-value">${agentId || '—'}</div>
+          </div>
+          <div class="exp-section">
+            <div class="exp-label">Content <button class="btn-copy btn-copy-text" onclick="copyId(\`${safeContent}\`, this)">⎘ copy</button></div>
+            <div class="exp-value">${content}</div>
+          </div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 document.getElementById('search-q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
@@ -242,6 +321,78 @@ async function showDiff(id) {
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Before Context Drawer ────────────────────────────────────────
+async function showBefore(sequenceNum, agentId, evt) {
+  evt.stopPropagation();
+  closeBefore();
+
+  const drawer = document.createElement('div');
+  drawer.id = 'before-drawer';
+  drawer.innerHTML = `
+    <div class="before-header">
+      <div class="before-title">
+        <span class="before-icon">↑</span>
+        Context before <span class="before-seq">#${sequenceNum}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="before-window-label">window</label>
+        <input id="before-window" class="before-window-input" type="number" value="10" min="1" max="100"
+          onchange="reloadBefore(${sequenceNum}, \`${agentId}\`)">
+        <button class="before-close" onclick="closeBefore()">✕</button>
+      </div>
+    </div>
+    <div id="before-body"><div class="before-loading">Loading…</div></div>
+  `;
+  document.body.appendChild(drawer);
+  requestAnimationFrame(() => drawer.classList.add('open'));
+  await fetchBefore(sequenceNum, agentId, 10);
+}
+
+async function reloadBefore(sequenceNum, agentId) {
+  const w = parseInt(document.getElementById('before-window').value) || 10;
+  await fetchBefore(sequenceNum, agentId, w);
+}
+
+async function fetchBefore(sequenceNum, agentId, window) {
+  const body = document.getElementById('before-body');
+  if (!body) return;
+  body.innerHTML = '<div class="before-loading">Loading…</div>';
+  try {
+    const rows = await api(`/api/before/${sequenceNum}?agent_id=${encodeURIComponent(agentId)}&window=${window}`);
+    if (!rows.length) {
+      body.innerHTML = '<div class="before-empty">No prior operations found.</div>';
+      return;
+    }
+    body.innerHTML = rows.map(r => {
+      const cls = opClass(r.operation);
+      let content = '—';
+      try {
+        const parsed = JSON.parse(r.content);
+        content = parsed.content || parsed.new_value || parsed.query || JSON.stringify(parsed);
+      } catch { content = r.content; }
+      return `
+        <div class="before-row">
+          <div class="before-row-top">
+            <span class="tl-op ${cls}">${r.operation}</span>
+            <span class="before-row-seq">#${r.sequence_num}</span>
+            <span class="before-row-time">${fmt(r.timestamp)}</span>
+          </div>
+          <div class="before-row-content">${truncate(content, 160)}</div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<div class="before-empty">Error: ${e.message}</div>`;
+  }
+}
+
+function closeBefore() {
+  const el = document.getElementById('before-drawer');
+  if (!el) return;
+  el.classList.remove('open');
+  el.addEventListener('transitionend', () => el.remove(), { once: true });
 }
 
 // ── Label Modal ─────────────────────────────────────────────────

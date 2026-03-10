@@ -46,6 +46,7 @@
 
     <!-- Main content -->
     <main class="main">
+
       <!-- Overview -->
       <div class="view active" id="view-overview">
         <div class="page-header">
@@ -70,7 +71,6 @@
             <div class="stat-value" id="stat-attacks">—</div>
           </div>
         </div>
-
         <div class="section-header">Operation Breakdown</div>
         <div class="breakdown-grid">
           <div class="breakdown-item">
@@ -131,13 +131,14 @@
           <h1>Timeline</h1>
         </div>
         <div class="query-bar">
-          <input id="timeline-session" class="input" placeholder="Session ID" />
+          <input id="timeline-agent" class="input" placeholder="Agent ID" />
           <button class="btn" onclick="loadTimeline()">Load Timeline</button>
         </div>
         <div class="timeline-wrap" id="timeline-wrap"></div>
       </div>
 
       <!-- Core Writes -->
+      <!-- 9 columns: # | Timestamp | Operation | Agent ID | Field | Content | Prev Value | Token % | Actions -->
       <div class="view" id="view-writes">
         <div class="page-header">
           <h1>Core Memory Writes</h1>
@@ -160,7 +161,7 @@
                 <th>Content</th>
                 <th>Prev Value</th>
                 <th>Token %</th>
-                <th>Diff</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="writes-body"></tbody>
@@ -169,13 +170,14 @@
       </div>
 
       <!-- Search -->
+      <!-- 8 columns: # | Timestamp | Operation | Agent | Content | Token % | Before | Expand -->
       <div class="view" id="view-search">
         <div class="page-header">
           <h1>Search Logs</h1>
         </div>
         <div class="query-bar">
           <input id="search-q" class="input" placeholder="Search content..." style="flex:1" />
-          <input id="search-session" class="input" placeholder="Session ID (optional)" />
+          <input id="search-agent" class="input" placeholder="Agent ID (optional)" />
           <button class="btn" onclick="doSearch()">Search</button>
         </div>
         <div class="table-wrap">
@@ -185,15 +187,18 @@
                 <th>#</th>
                 <th>Timestamp</th>
                 <th>Operation</th>
-                <th>Session</th>
+                <th>Agent</th>
                 <th>Content</th>
                 <th>Token %</th>
+                <th>Before</th>
+                <th>Expand</th>
               </tr>
             </thead>
             <tbody id="search-body"></tbody>
           </table>
         </div>
       </div>
+
     </main>
   </div>
 
