@@ -114,7 +114,10 @@ function viewTimeline(sessionId) {
 // ── Timeline ────────────────────────────────────────────────────
 async function loadTimeline() {
   const sid = document.getElementById('timeline-session').value.trim();
-  if (!sid) return;
+  if (!sid) {
+    print("No session ID provided for timeline view");
+    return;
+  }
   const entries = await api(`/api/timeline/${encodeURIComponent(sid)}`);
   const wrap = document.getElementById('timeline-wrap');
   if (!entries.length) {
