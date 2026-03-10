@@ -27,7 +27,6 @@ def get_db_path():
     global DB_PATH
     if DB_PATH:
         return DB_PATH
-    # Try to load from memgpt config
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -35,15 +34,13 @@ def get_db_path():
         config = MemGPTConfig.load()
         DB_PATH = os.path.join(config.recall_storage_path, "sqlite.db")
     except Exception:
-        # Fallback for testing
         DB_PATH = os.path.expanduser("~/.memgpt/sqlite.db")
     return DB_PATH
 
 def query_logs(sql, params=()):
     db_path = get_db_path()
     if not os.path.exists(db_path):
-        return [] # Return empty list instead of crashing if DB isn't there yet
-
+        return []
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -52,7 +49,7 @@ def query_logs(sql, params=()):
         return [dict(r) for r in results]
     except sqlite3.OperationalError as e:
         print(f"Database error: {e}")
-        return [] # Returns empty if table 'memory_logs' hasn't been created yet
+        return []
 
 
 @app.get("/")
@@ -63,16 +60,17 @@ def root():
 @app.get("/api/sessions")
 def sessions():
     return query_logs("""
-        SELECT 
+        SELECT
             session_id,
             agent_id,
             MIN(timestamp) as started_at,
             MAX(timestamp) as last_event,
             COUNT(*) as total_ops,
-            SUM(CASE WHEN operation LIKE 'core%' THEN 1 ELSE 0 END) as core_ops,
-            SUM(CASE WHEN operation LIKE 'archival%' THEN 1 ELSE 0 END) as archival_ops,
-            SUM(CASE WHEN operation LIKE 'recall%' THEN 1 ELSE 0 END) as recall_ops,
-            SUM(CASE WHEN ground_truth_label = 1 THEN 1 ELSE 0 END) as attack_ops,
+            SUM(CASE WHEN operation LIKE 'core%'     AND operation NOT LIKE '%read%' THEN 1 ELSE 0 END) as core_ops,
+            SUM(CASE WHEN operation LIKE 'archival%'                                 THEN 1 ELSE 0 END) as archival_ops,
+            SUM(CASE WHEN operation LIKE 'recall%'                                   THEN 1 ELSE 0 END) as recall_ops,
+            SUM(CASE WHEN operation LIKE '%read%'                                    THEN 1 ELSE 0 END) as read_ops,
+            SUM(CASE WHEN ground_truth_label = 1                                     THEN 1 ELSE 0 END) as attack_ops,
             MAX(attack_scenario) as attack_scenario
         FROM memory_logs
         WHERE session_id IS NOT NULL
@@ -103,16 +101,44 @@ def before_response(sequence_num: int, agent_id: str = Query(...), window: int =
 @app.get("/api/recent-writes")
 def recent_writes(hours: int = 1, agent_id: str = None):
     cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+    ops = (
+        'core_memory_write_persona',
+        'core_memory_write_human',
+        'core_memory_append',
+        'core_memory_replace',
+        'core_write',
+        'core_append',
+        'core_replace',
+    )
+    placeholders = ','.join('?' * len(ops))
+    if agent_id:
+        return query_logs(f"""
+            SELECT * FROM memory_logs
+            WHERE operation IN ({placeholders})
+            AND timestamp > ? AND agent_id = ?
+            ORDER BY sequence_num ASC
+        """, (*ops, cutoff, agent_id))
+    return query_logs(f"""
+        SELECT * FROM memory_logs
+        WHERE operation IN ({placeholders})
+        AND timestamp > ?
+        ORDER BY sequence_num ASC
+    """, (*ops, cutoff))
+
+
+@app.get("/api/recent-reads")
+def recent_reads(hours: int = 1, agent_id: str = None):
+    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
     if agent_id:
         return query_logs("""
             SELECT * FROM memory_logs
-            WHERE operation IN ('core_memory_append', 'core_memory_replace', 'core_write', 'core_append', 'core_replace')
+            WHERE operation LIKE '%read%'
             AND timestamp > ? AND agent_id = ?
             ORDER BY sequence_num ASC
         """, (cutoff, agent_id))
     return query_logs("""
         SELECT * FROM memory_logs
-        WHERE operation IN ('core_memory_append', 'core_memory_replace', 'core_write', 'core_append', 'core_replace')
+        WHERE operation LIKE '%read%'
         AND timestamp > ?
         ORDER BY sequence_num ASC
     """, (cutoff,))
@@ -133,21 +159,23 @@ def diff(log_id: int):
         "token_offset": row["token_offset"],
         "context_window_pct": row["context_window_pct"],
         "agent_id": row["agent_id"],
-        "session_id": row["session_id"],
+        "session_id": row.get("session_id"),
+        "sequence_num": row["sequence_num"],
     }
 
 
 @app.get("/api/stats")
 def stats():
     rows = query_logs("""
-        SELECT 
+        SELECT
             COUNT(*) as total_ops,
             COUNT(DISTINCT session_id) as total_sessions,
             COUNT(DISTINCT agent_id) as total_agents,
             SUM(CASE WHEN ground_truth_label = 1 THEN 1 ELSE 0 END) as total_attacks,
-            SUM(CASE WHEN operation LIKE 'core%' THEN 1 ELSE 0 END) as core_ops,
-            SUM(CASE WHEN operation LIKE 'archival%' THEN 1 ELSE 0 END) as archival_ops,
-            SUM(CASE WHEN operation LIKE 'recall%' THEN 1 ELSE 0 END) as recall_ops
+            SUM(CASE WHEN operation LIKE 'core%'     AND operation NOT LIKE '%read%' THEN 1 ELSE 0 END) as core_ops,
+            SUM(CASE WHEN operation LIKE 'archival%'                                 THEN 1 ELSE 0 END) as archival_ops,
+            SUM(CASE WHEN operation LIKE 'recall%'                                   THEN 1 ELSE 0 END) as recall_ops,
+            SUM(CASE WHEN operation LIKE '%read%'                                    THEN 1 ELSE 0 END) as read_ops
         FROM memory_logs
     """)
     return rows[0] if rows else {}
@@ -157,9 +185,6 @@ def stats():
 def search(q: str = Query(...), agent_id: str = None):
     base = "SELECT * FROM memory_logs WHERE content LIKE ?"
     params = [f"%{q}%"]
-    # if session_id:
-    #     base += " AND session_id = ?"
-    #     params.append(session_id)
     if agent_id:
         base += " AND agent_id = ?"
         params.append(agent_id)
@@ -171,7 +196,7 @@ def search(q: str = Query(...), agent_id: str = None):
 def label_session(session_id: str, attack_scenario: str, ground_truth_label: int):
     conn = sqlite3.connect(get_db_path())
     conn.execute("""
-        UPDATE memory_logs 
+        UPDATE memory_logs
         SET attack_scenario = ?, ground_truth_label = ?
         WHERE session_id = ?
     """, (attack_scenario, ground_truth_label, session_id))

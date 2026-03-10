@@ -35,6 +35,7 @@ from memgpt.memory import ArchivalMemory
 from memgpt.memory import CoreMemory as InContextMemory
 from memgpt.memory import RecallMemory, summarize_messages
 from memgpt.memory_logs import LoggedCoreMemory, LoggedRecallMemory, LoggedArchivalMemory
+import memgpt.memory_logs as _mem_logs
 from memgpt.metadata import MetadataStore
 from memgpt.models import chat_completion_response
 from memgpt.persistence_manager import LocalStateManager
@@ -142,24 +143,27 @@ def construct_system_with_memory(
     recall_memory: Optional[LoggedRecallMemory] = None,
     include_char_count: bool = True,
 ):
-    full_system_message = "\n".join(
-        [
-            system,
-            "\n",
-            f"### Memory [last modified: {memory_edit_timestamp.strip()}]",
-            f"{len(recall_memory) if recall_memory else 0} previous messages between you and the user are stored in recall memory (use functions to access them)",
-            f"{len(archival_memory) if archival_memory else 0} total memories you created are stored in archival memory (use functions to access them)",
-            "\nCore memory shown below (limited in size, additional information stored in archival / recall memory):",
-            f'<persona characters="{len(memory.persona)}/{memory.persona_char_limit}">' if include_char_count else "<persona>",
-            memory.persona,
-            "</persona>",
-            f'<human characters="{len(memory.human)}/{memory.human_char_limit}">' if include_char_count else "<human>",
-            memory.human,
-            "</human>",
-        ]
-    )
+    _mem_logs.SUPPRESS_READ_LOGS = True
+    try:
+        full_system_message = "\n".join(
+            [
+                system,
+                "\n",
+                f"### Memory [last modified: {memory_edit_timestamp.strip()}]",
+                f"{len(recall_memory) if recall_memory else 0} previous messages between you and the user are stored in recall memory (use functions to access them)",
+                f"{len(archival_memory) if archival_memory else 0} total memories you created are stored in archival memory (use functions to access them)",
+                "\nCore memory shown below (limited in size, additional information stored in archival / recall memory):",
+                f'<persona characters="{len(memory.persona)}/{memory.persona_char_limit}">' if include_char_count else "<persona>",
+                memory.persona,
+                "</persona>",
+                f'<human characters="{len(memory.human)}/{memory.human_char_limit}">' if include_char_count else "<human>",
+                memory.human,
+                "</human>",
+            ]
+        )
+    finally:
+        _mem_logs.SUPPRESS_READ_LOGS = False
     return full_system_message
-
 
 def initialize_message_sequence(
     model: str,
