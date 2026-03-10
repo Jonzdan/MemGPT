@@ -40,7 +40,6 @@ def _init_db():
             model TEXT,
             sequence_num INTEGER NOT NULL,
             context_window INTEGER,
-            session_id TEXT,
             attack_scenario TEXT,
             ground_truth_label INTEGER,
             previous_value TEXT
@@ -52,7 +51,6 @@ def _init_db():
         CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
     """)
 
-    # Create indexes
     conn.execute("CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation)")
@@ -70,7 +68,7 @@ def _ensure_db():
         _init_db()
         _db_initialized = True
 
-def _log(operation, content, session_id=None, previous_value=None, agent_id=None, user_id=None, model=None, context_window=None):
+def _log(operation, content, previous_value=None, agent_id=None, user_id=None, model=None, context_window=None):
     # print(f"Logging operation: {operation}, content: {content}, session_id: {session_id}, previous_value: {previous_value}, agent_id: {agent_id}, user_id: {user_id}, model: {model}, context_window: {context_window}")
     _ensure_db()
     conn = sqlite3.connect(_get_db_path())
@@ -79,7 +77,7 @@ def _log(operation, content, session_id=None, previous_value=None, agent_id=None
     # conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(
         """INSERT INTO memory_logs 
-        (timestamp, sequence_num, operation, content, token_offset, context_window_pct, model, context_window, session_id, user_id, agent_id, attack_scenario, ground_truth_label, previous_value) 
+        (timestamp, sequence_num, operation, content, token_offset, context_window_pct, model, context_window, user_id, agent_id, attack_scenario, ground_truth_label, previous_value) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)""",
         (
             datetime.utcnow().isoformat(),
@@ -90,7 +88,6 @@ def _log(operation, content, session_id=None, previous_value=None, agent_id=None
             CURRENT_CONTEXT_WINDOW_PCT,
             model,
             context_window,
-            session_id,
             str(user_id) if user_id else None,
             str(agent_id) if agent_id else None,
             previous_value
@@ -99,15 +96,8 @@ def _log(operation, content, session_id=None, previous_value=None, agent_id=None
     conn.commit()
     conn.close()
 
-CURRENT_SESSION_ID = None
 CURRENT_TOKEN_OFFSET = None
 CURRENT_CONTEXT_WINDOW_PCT = None
-
-def set_session(session_id: str):
-    global CURRENT_SESSION_ID
-    CURRENT_SESSION_ID = session_id
-
-
 
 def update_token_context(total_tokens: int, context_window: int):
     global CURRENT_TOKEN_OFFSET, CURRENT_CONTEXT_WINDOW_PCT
@@ -144,7 +134,7 @@ class LoggedCoreMemory(CoreMemory):
     def edit_persona(self, new_persona):
         print(f"[LoggedCoreMemory] edit_persona called")
         _log("core_memory_write_persona", {"field": "persona", "new_value": new_persona},
-             session_id=CURRENT_SESSION_ID, previous_value=self.persona)
+            previous_value=self.persona)
         # base class ignores agent_id, but include for signature consistency
         return super().edit_persona(new_persona)
 
@@ -153,7 +143,7 @@ class LoggedCoreMemory(CoreMemory):
         # prefer explicit agent_id over whatever the safe fetcher returns
         # aid = agent_id or self._get_safe_id()
         _log("core_memory_write_human", {"field": "human", "new_value": new_human},
-             session_id=CURRENT_SESSION_ID, previous_value=self.human)
+            previous_value=self.human)
         # base class ignores agent_id, but keep signature for consistency
         return super().edit_human(new_human)
 
@@ -162,7 +152,7 @@ class LoggedCoreMemory(CoreMemory):
         # aid = self._get_safe_id() # Use the safe ID fetcher
         prev = self.persona if field == "persona" else self.human
         _log("core_memory_append", {"field": field, "content": content},
-             session_id=CURRENT_SESSION_ID, previous_value=prev)
+             previous_value=prev)
         return super().edit_append(field, content, sep)
 
     def edit_replace(self, field, old_content, new_content):
@@ -170,7 +160,7 @@ class LoggedCoreMemory(CoreMemory):
         # aid = self._get_safe_id() # Use the safe ID fetcher
         prev = self.persona if field == "persona" else self.human
         _log("core_memory_replace", {"field": field, "old": old_content, "new": new_content},
-             session_id=CURRENT_SESSION_ID, previous_value=prev)
+            previous_value=prev)
         return super().edit_replace(field, old_content, new_content)
 
 
@@ -182,7 +172,6 @@ class LoggedRecallMemory(BaseRecallMemory):
     def text_search(self, query_string, count=None, start=None):
         results, total = super().text_search(query_string, count, start)
         _log("recall_text_search", {"query": query_string, "total_results": total},
-             session_id=CURRENT_SESSION_ID,
              user_id=self.agent_state.user_id,
              context_window=self.agent_state.llm_config.context_window,
              model=self.agent_state.llm_config.model,
@@ -192,7 +181,6 @@ class LoggedRecallMemory(BaseRecallMemory):
     def date_search(self, start_date, end_date, count=None, start=None):
         results, total = super().date_search(start_date, end_date, count, start)
         _log("recall_date_search", {"start_date": start_date, "end_date": end_date, "total_results": total},
-             session_id=CURRENT_SESSION_ID,
              user_id=self.agent_state.user_id,
              context_window=self.agent_state.llm_config.context_window,
              model=self.agent_state.llm_config.model,
@@ -202,7 +190,6 @@ class LoggedRecallMemory(BaseRecallMemory):
     def insert(self, message: Message):
         # print(f"[LoggedRecallMemory] insert called with message: {message._dict__}")  # Debug print to see message content
         _log("recall_insert", {"role": message.role, "text": message.text},
-             session_id=CURRENT_SESSION_ID,
              user_id=self.agent_state.user_id,
              context_window=self.agent_state.llm_config.context_window,
              model=self.agent_state.llm_config.model,
@@ -212,7 +199,6 @@ class LoggedRecallMemory(BaseRecallMemory):
     def insert_many(self, messages: List[Message]):
         for m in messages:
             _log("recall_insert_many", {"role": m.role, "text": m.text},
-                 session_id=CURRENT_SESSION_ID,
                  user_id=self.agent_state.user_id,
                  context_window=self.agent_state.llm_config.context_window,
                  model=self.agent_state.llm_config.model,
@@ -227,7 +213,6 @@ class LoggedArchivalMemory(EmbeddingArchivalMemory):
     
     def insert(self, memory_string, return_ids=False):
         _log("archival_insert", {"content": memory_string},
-             session_id=CURRENT_SESSION_ID,
              user_id=self.agent_state.user_id,
              context_window=self.agent_state.llm_config.context_window,
              model=self.agent_state.llm_config.model,
@@ -240,7 +225,7 @@ class LoggedArchivalMemory(EmbeddingArchivalMemory):
             "query": query_string,
             "total_results": total,
             "results": [r["content"] for r in results]
-        }, session_id=CURRENT_SESSION_ID,
+        },
            user_id=self.agent_state.user_id,
            context_window=self.agent_state.llm_config.context_window,
             model=self.agent_state.llm_config.model,
@@ -249,7 +234,6 @@ class LoggedArchivalMemory(EmbeddingArchivalMemory):
 
     def delete(self, filters=None):
         _log("archival_delete", {"filters": str(filters)},
-             session_id=CURRENT_SESSION_ID,
              user_id=self.agent_state.user_id,
              context_window=self.agent_state.llm_config.context_window,
              model=self.agent_state.llm_config.model,

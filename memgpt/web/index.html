@@ -24,9 +24,6 @@
         <button class="nav-item active" data-view="overview" onclick="switchView('overview', this)">
           <span class="nav-icon">◈</span> Overview
         </button>
-        <button class="nav-item" data-view="sessions" onclick="switchView('sessions', this)">
-          <span class="nav-icon">◫</span> Sessions
-        </button>
         <button class="nav-item" data-view="timeline" onclick="switchView('timeline', this)">
           <span class="nav-icon">◱</span> Timeline
         </button>
@@ -57,10 +54,6 @@
           <div class="stat-card">
             <div class="stat-label">Total Operations</div>
             <div class="stat-value" id="stat-total">—</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Sessions</div>
-            <div class="stat-value" id="stat-sessions">—</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Agents</div>
@@ -94,34 +87,6 @@
             <div class="breakdown-label">Archival Memory</div>
             <div class="breakdown-count" id="count-archival">—</div>
           </div>
-        </div>
-      </div>
-
-      <!-- Sessions -->
-      <div class="view" id="view-sessions">
-        <div class="page-header">
-          <h1>Sessions</h1>
-          <button class="btn-refresh" onclick="loadSessions()">↻ Refresh</button>
-        </div>
-        <div class="table-wrap">
-          <table id="sessions-table">
-            <thead>
-              <tr>
-                <th>Session ID</th>
-                <th>Agent ID</th>
-                <th>Started</th>
-                <th>Last Event</th>
-                <th>Ops</th>
-                <th>Core</th>
-                <th>Recall</th>
-                <th>Archival</th>
-                <th>Attacks</th>
-                <th>Scenario</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="sessions-body"></tbody>
-          </table>
         </div>
       </div>
 

@@ -8,7 +8,6 @@ function switchView(name, el) {
   el.classList.add('active');
 
   if (name === 'overview') loadStats();
-  if (name === 'sessions') loadSessions();
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -77,7 +76,6 @@ async function loadStats() {
   try {
     const s = await api('/api/stats');
     document.getElementById('stat-total').textContent = s.total_ops ?? 0;
-    document.getElementById('stat-sessions').textContent = s.total_sessions ?? 0;
     document.getElementById('stat-agents').textContent = s.total_agents ?? 0;
     document.getElementById('stat-attacks').textContent = s.total_attacks ?? 0;
 
@@ -95,34 +93,6 @@ async function loadStats() {
   } catch (e) {
     console.error(e);
   }
-}
-
-// ── Sessions ────────────────────────────────────────────────────
-async function loadSessions() {
-  const sessions = await api('/api/sessions');
-  const tbody = document.getElementById('sessions-body');
-  if (!sessions.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="empty-state">No sessions found.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = sessions.map(s => `
-    <tr class="${s.attack_ops > 0 ? 'attack-row' : ''}">
-      <td title="${s.session_id}">${shortId(s.session_id)}</td>
-      <td title="${s.agent_id}">${shortId(s.agent_id)}</td>
-      <td>${fmt(s.started_at)}</td>
-      <td>${fmt(s.last_event)}</td>
-      <td>${s.total_ops}</td>
-      <td style="color:var(--core)">${s.core_ops}</td>
-      <td style="color:var(--recall)">${s.recall_ops}</td>
-      <td style="color:var(--archival)">${s.archival_ops}</td>
-      <td style="color:var(--attack)">${s.attack_ops || 0}</td>
-      <td>${s.attack_scenario || '—'}</td>
-      <td style="display:flex;gap:6px">
-        <button class="btn-sm" onclick="viewTimeline('${s.agent_id}')">Timeline</button>
-        <button class="btn-sm" onclick="openLabel('${s.session_id}')">Label</button>
-      </td>
-    </tr>
-  `).join('');
 }
 
 function viewTimeline(agentId) {
