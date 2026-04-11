@@ -1,3 +1,4 @@
+import contextvars
 import json
 import sqlite3
 import os
@@ -44,7 +45,6 @@ def _init_db():
             previous_value TEXT
         );
 
-        CREATE INDEX IF NOT EXISTS idx_session ON memory_logs(session_id);
         CREATE INDEX IF NOT EXISTS idx_agent ON memory_logs(agent_id);
         CREATE INDEX IF NOT EXISTS idx_operation ON memory_logs(operation);
         CREATE INDEX IF NOT EXISTS idx_timestamp ON memory_logs(timestamp);
@@ -60,6 +60,29 @@ def _ensure_db():
         _init_db()
         _db_initialized = True
 
+CURRENT_TOKEN_OFFSET = None
+CURRENT_CONTEXT_WINDOW_PCT = None
+CURRENT_AGENT_ID = None
+SUPPRESS_READ_LOGS = False
+
+_attack_scenario_var    = contextvars.ContextVar("attack_scenario",    default=None)
+_ground_truth_label_var = contextvars.ContextVar("ground_truth_label", default=None)
+
+def set_attack_context(scenario: str, label: int):
+    """Called immediately before agent.step() in the generation harness."""
+    _attack_scenario_var.set(scenario)
+    _ground_truth_label_var.set(label)
+ 
+def clear_attack_context():
+    """Called in a finally block after agent.step() returns."""
+    _attack_scenario_var.set(None)
+    _ground_truth_label_var.set(None)
+
+def update_token_context(total_tokens: int, context_window: int):
+    global CURRENT_TOKEN_OFFSET, CURRENT_CONTEXT_WINDOW_PCT
+    CURRENT_TOKEN_OFFSET = total_tokens
+    CURRENT_CONTEXT_WINDOW_PCT = round(total_tokens / context_window, 4) if context_window else None
+
 def _log(operation, content, previous_value=None, agent_id=None, user_id=None, model=None, context_window=None):
     _ensure_db()
     conn = sqlite3.connect(_get_db_path())
@@ -68,7 +91,7 @@ def _log(operation, content, previous_value=None, agent_id=None, user_id=None, m
     conn.execute(
         """INSERT INTO memory_logs
         (timestamp, sequence_num, operation, content, token_offset, context_window_pct, model, context_window, user_id, agent_id, attack_scenario, ground_truth_label, previous_value)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             datetime.utcnow().isoformat(),
             _next_seq(),
@@ -80,30 +103,19 @@ def _log(operation, content, previous_value=None, agent_id=None, user_id=None, m
             context_window,
             str(user_id) if user_id else None,
             str(agent_id) if agent_id else None,
+            _attack_scenario_var.get(),
+            _ground_truth_label_var.get(),
             previous_value,
         )
     )
     conn.commit()
     conn.close()
 
-CURRENT_TOKEN_OFFSET = None
-CURRENT_CONTEXT_WINDOW_PCT = None
-CURRENT_AGENT_ID = None
-SUPPRESS_READ_LOGS = False
-
-def update_token_context(total_tokens: int, context_window: int):
-    global CURRENT_TOKEN_OFFSET, CURRENT_CONTEXT_WINDOW_PCT
-    CURRENT_TOKEN_OFFSET = total_tokens
-    CURRENT_CONTEXT_WINDOW_PCT = round(total_tokens / context_window, 4) if context_window else None
-
-
 class LoggedCoreMemory(CoreMemory):
 
     def set_agent_id(self, agent_id):
         global CURRENT_AGENT_ID
         CURRENT_AGENT_ID = agent_id
-
-    # ── Read logging via property overrides ──────────────────────
 
     @property
     def persona(self):
@@ -224,3 +236,4 @@ class LoggedArchivalMemory(EmbeddingArchivalMemory):
              model=self.agent_state.llm_config.model,
              agent_id=self.agent_state.id)
         return super().delete(filters)
+    
