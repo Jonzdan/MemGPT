@@ -19,7 +19,7 @@ WINDOW_SIZES = [5, 10, 20]
 def load_logs(db_path: str, limit: int | None = 2000, null: bool = False) -> pd.DataFrame:
     """Load memory_logs from SQLite into a DataFrame."""
     conn = sqlite3.connect(db_path)
-    query = f"SELECT * FROM memory_logs {f'WHERE attack_scenario IS NOT NULL' if null else ''} ORDER BY sequence_num {f' LIMIT {limit}' if limit else ''}"
+    query = f"SELECT * FROM memory_logs {f'WHERE attack_scenario IS NOT NULL' if null else ''} ORDER BY sequence_num {f' LIMIT {limit}' if limit else ''} OFFSET 1245"
     df = pd.read_sql_query(query, conn)
     conn.close()
  
@@ -256,7 +256,7 @@ class MLClassifier:
             "y_proba": y_proba,
             "feature_names": list(X.columns),
         }
-    
+
         print("\n── Classification Report ──")
         print(classification_report(y_test, y_pred))
         print(f"ROC-AUC : {auc:.4f}")
@@ -306,6 +306,37 @@ class MLClassifier:
         print("Saved in classifier_eval.png")
         return self
     
+    def scenario_detection_rates(self) -> pd.DataFrame:
+        """
+        For each attack_scenario, show mean predicted attack probability
+        and detection rate at 0.5 threshold.
+        """
+        if self.eval_dict is None:
+            raise Exception("Call build_classifier first")
+
+        test_idx = self.eval_dict["X_test"].index
+        scenarios = self.feature_df.iloc[test_idx]["attack_scenario"].reset_index(drop=True)
+
+        results = pd.DataFrame({
+            "attack_scenario": scenarios.values,
+            "attack_prob":     self.eval_dict["y_proba"],
+            "predicted":       self.eval_dict["y_pred"],
+            "actual":          self.eval_dict["y_test"].values,
+        })
+
+        return (
+            results
+            .groupby("attack_scenario")
+            .agg(
+                n_rows        = ("actual",      "count"),
+                n_actual_atk  = ("actual",      "sum"),
+                mean_prob     = ("attack_prob", "mean"),
+                detection_rate= ("predicted",   lambda x: x[results.loc[x.index, "actual"] == 1].mean()),
+            )
+            .sort_values("detection_rate", ascending=False)
+            .round(3)
+        )
+    
     def predict_new_session(self, pipe: Pipeline, raw_rows: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
         """
         Score a batch of raw log rows.
@@ -333,12 +364,15 @@ if __name__ == "__main__":
     classifier = (MLClassifier(WINDOW_SIZES)
         .build_features(df)
         .build_classifier()
-        .plot_evaluation(50)
+        # .plot_evaluation(50)
     )
+
+    scenarios = classifier.scenario_detection_rates()
+    print("results", scenarios)
 
     print(f"  Feature matrix: {classifier.feature_df.shape}")
     print(f"  Label distribution:\n{classifier.feature_df['ground_truth_label'].value_counts()}")
  
-    scored = classifier.predict_new_session(classifier.pipe, df.head(50))
-    print("\nSample scored rows:")
-    print(scored[["id", "agent_id", "operation", "attack_prob", "predicted"]].head(5).to_string())
+    # scored = classifier.predict_new_session(classifier.pipe, df.head(50))
+    # print("\nSample scored rows:")
+    # print(scored[["id", "agent_id", "operation", "attack_prob", "predicted"]].head(5).to_string())
