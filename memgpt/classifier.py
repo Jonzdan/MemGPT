@@ -16,10 +16,10 @@ import matplotlib.pyplot as plt
 
 WINDOW_SIZES = [5, 10, 20]
 
-def load_logs(db_path: str, limit: int | None = 2000, null: bool = False) -> pd.DataFrame:
+def load_logs(db_path: str, limit: int | None = None, null: bool = False) -> pd.DataFrame:
     """Load memory_logs from SQLite into a DataFrame."""
     conn = sqlite3.connect(db_path)
-    query = f"SELECT * FROM memory_logs {f'WHERE attack_scenario IS NOT NULL' if null else ''} ORDER BY sequence_num {f' LIMIT {limit}' if limit else ''} OFFSET 1245"
+    query = f"SELECT * FROM memory_logs {f'WHERE attack_scenario IS NOT NULL' if null else ''} ORDER BY sequence_num {f' LIMIT {limit}' if limit else ''}"
     df = pd.read_sql_query(query, conn)
     conn.close()
  
@@ -40,6 +40,7 @@ class MLClassifier:
         self.feature_df = None
         self.pipe = None
         self.eval_dict = None
+        self.test_idx = None
 
     def _op_flags(self, op: str) -> dict:
         op_lower = op.lower()
@@ -99,6 +100,23 @@ class MLClassifier:
         )
 
         return ((score >= 3) & init_mask).astype(int)
+    
+    def rule_based_evaluate(self):
+        if self.feature_df is None:
+            raise Exception("Run build_features first")
+
+        test_idx = self.eval_dict["X_test"].index
+        X_test = self.feature_df.loc[test_idx]
+        y_test = X_test["ground_truth_label"].fillna(0).astype(int)
+
+        # reuse _weak_label on test portion of data_df
+        test_data = self.data_df.loc[test_idx].copy()
+        y_pred = self._weak_label(test_data)
+
+        print("\n── Rule-Based Classifier ──")
+        print(classification_report(y_test, y_pred))
+        print(f"ROC-AUC: {roc_auc_score(y_test, y_pred):.4f}")
+        return y_pred
 
     def _aggregate_features(self, group: pd.DataFrame):
         group = group.copy()
@@ -154,7 +172,8 @@ class MLClassifier:
         scalar_cols = [
             "agent_id", "op_encoded", "is_write", "is_read", "is_sys_mem",
             "token_offset", "context_window_pct", "context_window",
-            "content_len", "prev_val_len", "content_changed", "seq_gap",
+            "seq_gap", "content_len",
+            "timestamp", "sequence_num",
         ]
     
         rolling_cols = [
@@ -206,12 +225,13 @@ class MLClassifier:
             raise Exception("Feature df not initialized. Call build_features")
         
         groups = self.feature_df["agent_id"]
-        X = self.feature_df.drop(columns={"ground_truth_label", "attack_scenario", "agent_id"}, errors="ignore")
+        X = self.feature_df.drop(columns={"ground_truth_label", "attack_scenario", "agent_id", "timestamp", "sequence_num"}, errors="ignore")
         y = self.feature_df[label_col].fillna(0).astype(int)
 
         gss = GroupShuffleSplit(test_size=test_size, random_state=random_state)
 
         train_idx, test_idx = next(gss.split(X, y, groups))
+        self.test_idx = test_idx
 
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
@@ -242,7 +262,7 @@ class MLClassifier:
     
         report = classification_report(y_test, y_pred, output_dict=True)
 
-        num_agents = 3  # change to match actual num of agents
+        num_agents = 9  # change to match actual num of agents
         cv_scores = cross_val_score(self.pipe, X, y, cv=StratifiedGroupKFold(n_splits=num_agents).split(X, y, groups), scoring="f1_weighted", n_jobs=-1)
     
         self.eval_dict = {
@@ -262,7 +282,111 @@ class MLClassifier:
         print(f"ROC-AUC : {auc:.4f}")
         print(f"CV F1   : {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
         return self
-    
+
+    def compute_detection_latency(self):
+        if self.eval_dict is None:
+            raise Exception("Run build_classifier first")
+
+        test_idx = set(self.eval_dict["X_test"].index)
+        feature_df = self.feature_df.copy()
+        feature_df["ground_truth_label"] = feature_df["ground_truth_label"].fillna(0).astype(int)
+
+        latencies = []
+        op_encoder = LabelEncoder().fit(self.data_df["operation"].fillna("unknown"))
+
+        for agent_id, group in self.data_df.groupby("agent_id"):
+            agent_test_idx = set(group.index) & test_idx
+            if not agent_test_idx:
+                continue
+
+            group = group.sort_values("sequence_num")
+            history = []
+            in_attack = False
+            attack_start_seq = None
+            attack_start_time = None
+
+            for orig_idx, row in group.iterrows():
+                history.append(row.to_frame().T)
+
+                if len(history) < min(self.window_sizes):
+                    continue
+
+                if orig_idx not in agent_test_idx:
+                    continue
+
+                # trim history to max window size for efficiency
+                if len(history) > max(self.window_sizes) * 2:
+                    history = history[-max(self.window_sizes):]
+
+                history_df = pd.concat(history, ignore_index=True)
+
+                # drop any previously computed cols to avoid duplicates
+                cols_to_drop = [
+                    "is_write", "is_read", "is_sys_mem",
+                    "content_len", "prev_val_len", "content_changed", "op_encoded",
+                    "seq_gap",
+                ] + [
+                    c for c in history_df.columns
+                    if any(c.startswith(f"w{w}_") for w in self.window_sizes)
+                ]
+                history_df = history_df.drop(columns=cols_to_drop, errors="ignore")
+
+                # recompute features
+                history_df["op_encoded"] = op_encoder.transform(
+                    history_df["operation"].fillna("unknown")
+                )
+                flag_df = history_df["operation"].apply(
+                    lambda o: pd.Series(self._op_flags(o))
+                )
+                history_df = pd.concat([history_df, flag_df], axis=1)
+                history_df["content_len"] = history_df["content"].fillna("").str.len()
+                history_df["prev_val_len"] = history_df["previous_value"].fillna("").str.len()
+                history_df["content_changed"] = (
+                    history_df["content_len"] != history_df["prev_val_len"]
+                ).astype(int)
+                history_df["seq_gap"] = history_df["sequence_num"].diff().fillna(0)
+
+                history_df = self._aggregate_features(history_df)
+
+                scalar_cols = [
+                    "op_encoded", "is_write", "is_read", "is_sys_mem",
+                    "token_offset", "context_window_pct", "context_window",
+                    "seq_gap", "content_len"
+                ]
+                rolling_cols = [
+                    c for c in history_df.columns
+                    if any(c.startswith(f"w{w}_") for w in self.window_sizes)
+                ]
+                X_row = history_df.iloc[[-1]][scalar_cols + rolling_cols]
+
+                import math
+                pred = int(self.pipe.predict(X_row)[0])
+                gt = int(row.get("ground_truth_label", 0) if not math.isnan(row.get("ground_truth_label", 0)) else 0)
+
+                if gt == 1 and not in_attack:
+                    in_attack = True
+                    attack_start_seq = row["sequence_num"]
+                    attack_start_time = pd.to_datetime(row["timestamp"])
+
+                if in_attack and pred == 1:
+                    latencies.append({
+                        "agent_id":      agent_id,
+                        "latency_steps": row["sequence_num"] - attack_start_seq,
+                        "latency_time":  (pd.to_datetime(row["timestamp"]) - attack_start_time).total_seconds(),
+                        "detected":      True,
+                    })
+                    in_attack = False
+
+            if in_attack:
+                latencies.append({
+                    "agent_id":      agent_id,
+                    "latency_steps": None,
+                    "latency_time":  None,
+                    "detected":      False,
+                })
+
+        return pd.DataFrame(latencies)
+
     def plot_evaluation(self, top_n: int = 20):
         if not self.eval_dict and not self.pipe:
             raise Exception("eval_dict and pipe not set for plot_evaluation")
@@ -367,11 +491,28 @@ if __name__ == "__main__":
         # .plot_evaluation(50)
     )
 
+    lat_df = classifier.compute_detection_latency()
+    print(lat_df.describe())
+
+    feature_names = classifier.eval_dict["feature_names"]
+    importances = classifier.pipe.named_steps["clf"].feature_importances_
+
+    scalar = ["op_encoded", "is_write", "is_read", "is_sys_mem", "token_offset", 
+            "context_window_pct", "context_window", "content_len", "prev_val_len", 
+            "content_changed", "seq_gap"]
+
+    scalar_imp = sum(importances[i] for i, f in enumerate(feature_names) if f in scalar)
+    rolling_imp = sum(importances[i] for i, f in enumerate(feature_names) if f not in scalar)
+
+    print(f"Scalar feature importance: {scalar_imp:.3f}")
+    print(f"Rolling feature importance: {rolling_imp:.3f}")
+
     scenarios = classifier.scenario_detection_rates()
-    print("results", scenarios)
 
     print(f"  Feature matrix: {classifier.feature_df.shape}")
     print(f"  Label distribution:\n{classifier.feature_df['ground_truth_label'].value_counts()}")
+
+    classifier.rule_based_evaluate()
  
     # scored = classifier.predict_new_session(classifier.pipe, df.head(50))
     # print("\nSample scored rows:")
