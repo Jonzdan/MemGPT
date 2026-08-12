@@ -94,6 +94,9 @@ class Message(Record):
         embedding_dim: Optional[int] = None,
         embedding_model: Optional[str] = None,
         id: Optional[uuid.UUID] = None,
+        token_offset: Optional[int] = None,
+        is_injection: Optional[bool] = None,
+        injection_type: Optional[str] = None,
     ):
         super().__init__(id)
         self.user_id = user_id
@@ -135,6 +138,10 @@ class Message(Record):
         else:
             assert tool_call_id is None
         self.tool_call_id = tool_call_id
+
+        self.token_offset = token_offset
+        self.is_injection = is_injection
+        self.injection_type = injection_type
 
     def to_json(self):
         json_message = vars(self)

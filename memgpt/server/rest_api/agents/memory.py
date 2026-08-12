@@ -31,6 +31,7 @@ class UpdateAgentMemoryRequest(BaseModel):
 
 
 class UpdateAgentMemoryResponse(BaseModel):
+    agent_id: uuid.UUID = Field(..., description="Agent identifier for which the memory was updated.")
     old_core_memory: CoreMemory = Field(..., description="The previous state of the agent's core memory.")
     new_core_memory: CoreMemory = Field(..., description="The updated state of the agent's core memory.")
 
